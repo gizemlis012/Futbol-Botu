@@ -1,7 +1,17 @@
+
 import os
 import time
 import json
 import requests
+import threading
+from flask import Flask
+
+# Flask web sunucusu (Render'ın çökmesini engellemek için)
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot aktif ve çalışıyor!"
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY")
@@ -96,10 +106,20 @@ def check_live_matches(users):
     except Exception as e:
         print(f"Canlı maç kontrol hatası: {e}")
 
-if __name__ == "__main__":
+def run_bot_loop():
     users = load_users()
-    print("Bot çalışmaya başladı...")
+    print("Bot döngüsü çalışmaya başladı...")
     while True:
         check_updates(users)
         check_live_matches(users)
         time.sleep(10)
+
+if __name__ == "__main__":
+    # Botu arka planda (thread içinde) çalıştırıyoruz
+    t = threading.Thread(target=run_bot_loop)
+    t.daemon = True
+    t.start()
+    
+    # Render'ın web servisinin çökmemesi için Flask sunucusunu başlatıyoruz
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
