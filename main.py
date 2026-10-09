@@ -78,3 +78,28 @@ def check_live_matches(users):
         if response.status_code == 200:
             data = response.json()
             for match in data.get('matches', []):
+                home_team = match.get('homeTeam', {}).get('name', 'Ev Sahibi')
+                away_team = match.get('awayTeam', {}).get('name', 'Deplasman')
+                status = match.get('status')
+                score = match.get('score', {}).get('fullTime', {})
+                home_goals = score.get('home', 0)
+                away_goals = score.get('away', 0)
+                
+                match_id = match.get('id')
+                event_key = f"{match_id}_{status}_{home_goals}_{away_goals}"
+                
+                if status in ['IN_PLAY', 'PAUSED'] and event_key not in seen_events:
+                    seen_events.add(event_key)
+                    msg = f"⚽ **Canlı Maç Skoru!**\n{home_team} {home_goals} - {away_goals} {away_team}\nDurum: {status}"
+                    for user_id in users:
+                        send_telegram_message(user_id, msg)
+    except Exception as e:
+        print(f"Canlı maç kontrol hatası: {e}")
+
+if __name__ == "__main__":
+    users = load_users()
+    print("Bot çalışmaya başladı...")
+    while True:
+        check_updates(users)
+        check_live_matches(users)
+        time.sleep(10)
