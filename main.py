@@ -1,9 +1,9 @@
-
 import os
 import time
 import json
 import requests
 import threading
+from datetime import datetime
 from flask import Flask
 
 # Flask web sunucusu (Render'ın çökmesini engellemek için)
@@ -56,6 +56,41 @@ def send_telegram_message(chat_id, message):
     except Exception as e:
         print(f"Mesaj gönderme hatası: {e}")
 
+def get_todays_matches_text():
+    headers = {'X-Auth-Token': FOOTBALL_API_KEY}
+    today = datetime.now().strftime('%Y-%m-%d')
+    url = f"https://api.football-data.org/v4/matches?dateFrom={today}&dateTo={today}"
+    
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            matches = data.get('matches', [])
+            if not matches:
+                return "📅 Bugün takip edilen liglerde oynanacak maç bulunamadı."
+            
+            msg = "📅 **Bugünün Maçları ve Skorları:**\n\n"
+            for match in matches:
+                home = match.get('homeTeam', {}).get('name', 'Ev Sahibi')
+                away = match.get('awayTeam', {}).get('name', 'Deplasman')
+                utc_time = match.get('utcDate', '')
+                time_str = utc_time.split('T')[1][:5] if 'T' in utc_time else ''
+                status = match.get('status')
+                score = match.get('score', {}).get('fullTime', {})
+                h_goals = score.get('home')
+                a_goals = score.get('away')
+                
+                if status == 'SCHEDULED':
+                    msg += f"⏰ {time_str} | {home} vs {away}\n"
+                elif status in ['IN_PLAY', 'PAUSED']:
+                    msg += f"⚽ **CANLI** | {home} {h_goals} - {a_goals} {away}\n"
+                else:
+                    msg += f"✅ {home} {h_goals} - {a_goals} {away} (Bitti)\n"
+            return msg
+    except Exception as e:
+        print(f"Maç çekme hatası: {e}")
+    return "Maç bilgileri alınırken bir hata oluştu."
+
 def check_updates(users):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
     offset = load_offset()
@@ -71,11 +106,16 @@ def check_updates(users):
                 if message:
                     chat_id = message.get("chat", {}).get("id")
                     text = message.get("text", "")
+                    
                     if text == "/start":
                         if chat_id not in users:
                             users.add(chat_id)
                             save_users(users)
-                            send_telegram_message(chat_id, "🤖 **Hoş geldiniz!** Canlı maç bildirimleri için başarıyla kaydoldunuz.")
+                            send_telegram_message(chat_id, "🤖 **Hoş geldiniz!** Canlı maç bildirimleri için başarıyla kaydoldunuz.\n\nBugünün maçlarını görmek için `/maclar` yazabilirsiniz.")
+                    elif text in ["/maclar", "/maçlar"]:
+                        matches_text = get_todays_matches_text()
+                        send_telegram_message(chat_id, matches_text)
+                        
     except Exception as e:
         print(f"Güncelleme alma hatası: {e}")
 
@@ -115,11 +155,9 @@ def run_bot_loop():
         time.sleep(10)
 
 if __name__ == "__main__":
-    # Botu arka planda (thread içinde) çalıştırıyoruz
     t = threading.Thread(target=run_bot_loop)
     t.daemon = True
     t.start()
     
-    # Render'ın web servisinin çökmemesi için Flask sunucusunu başlatıyoruz
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
