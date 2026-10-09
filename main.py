@@ -1,0 +1,80 @@
+import os
+import time
+import json
+import requests
+
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY")
+
+COMPETITIONS = ['CLI', 'PL', 'PD', 'DED', 'FL1', 'BL1']
+USERS_FILE = "users.json"
+OFFSET_FILE = "offset.txt"
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r") as f:
+                return set(json.load(f))
+        except:
+            pass
+    return set()
+
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(list(users), f)
+
+def load_offset():
+    if os.path.exists(OFFSET_FILE):
+        try:
+            with open(OFFSET_FILE, "r") as f:
+                return int(f.read().strip())
+        except:
+            pass
+    return 0
+
+def save_offset(offset):
+    with open(OFFSET_FILE, "w") as f:
+        f.write(str(offset))
+
+seen_events = set()
+
+def send_telegram_message(chat_id, message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Mesaj gönderme hatası: {e}")
+
+def check_updates(users):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
+    offset = load_offset()
+    try:
+        response = requests.get(url, params={"offset": offset, "timeout": 1})
+        if response.status_code == 200:
+            data = response.json()
+            for result in data.get("result", []):
+                update_id = result.get("update_id")
+                save_offset(update_id + 1)
+                
+                message = result.get("message")
+                if message:
+                    chat_id = message.get("chat", {}).get("id")
+                    text = message.get("text", "")
+                    if text == "/start":
+                        if chat_id not in users:
+                            users.add(chat_id)
+                            save_users(users)
+                            send_telegram_message(chat_id, "🤖 **Hoş geldiniz!** Canlı maç bildirimleri için başarıyla kaydoldunuz.")
+    except Exception as e:
+        print(f"Güncelleme alma hatası: {e}")
+
+def check_live_matches(users):
+    headers = {'X-Auth-Token': FOOTBALL_API_KEY}
+    url = "https://api.football-data.org/v4/matches"
+    
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            for match in data.get('matches', []):
